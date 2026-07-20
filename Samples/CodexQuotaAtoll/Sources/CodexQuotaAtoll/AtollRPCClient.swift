@@ -59,6 +59,15 @@ actor AtollRPCClient {
     }
 
     private func call(method: String, params: [String: Any]) async throws -> [String: Any] {
+        do {
+            return try await callOnce(method: method, params: params)
+        } catch {
+            resetSocket()
+            return try await callOnce(method: method, params: params)
+        }
+    }
+
+    private func callOnce(method: String, params: [String: Any]) async throws -> [String: Any] {
         let task = connectedSocket()
         let id = String(nextID)
         nextID += 1
@@ -97,6 +106,11 @@ actor AtollRPCClient {
             throw AtollRPCError.invalidResponse
         }
         return result
+    }
+
+    private func resetSocket() {
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
     }
 
     private func connectedSocket() -> URLSessionWebSocketTask {
