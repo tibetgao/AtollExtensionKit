@@ -42,10 +42,12 @@ struct CodexQuotaAtollApp {
         } catch {
             FileHandle.standardError.write(Data("codex-quota-atoll: \(error.localizedDescription)\n".utf8))
             await presenter.dismiss()
+            await presenter.close()
             await client.stop()
             exit(EXIT_FAILURE)
         }
 
+        await presenter.close()
         await client.stop()
     }
 
