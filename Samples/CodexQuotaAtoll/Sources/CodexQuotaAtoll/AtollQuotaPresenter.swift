@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 final class AtollQuotaPresenter {
     static let activityID = "codex-quota"
+    private let rpc = AtollRPCClient()
     private var hasPresented = false
 
     var isAtollInstalled: Bool {
@@ -12,7 +13,7 @@ final class AtollQuotaPresenter {
     }
 
     func requestAuthorization() async throws -> Bool {
-        try await AtollClient.shared.requestAuthorization()
+        try await rpc.requestAuthorization()
     }
 
     func show(_ snapshot: CodexQuotaSnapshot) async throws {
@@ -21,7 +22,7 @@ final class AtollQuotaPresenter {
         let accent = color(for: snapshot.lowestRemainingPercent ?? remaining)
         let descriptor = AtollLiveActivityDescriptor(
             id: Self.activityID,
-            bundleIdentifier: Bundle.main.bundleIdentifier ?? "com.example.CodexQuotaAtoll",
+            bundleIdentifier: AtollRPCClient.bundleIdentifier,
             priority: remaining <= 10 || snapshot.limitReached ? .high : .normal,
             title: "Codex \(snapshot.label(for: window)) \(Int(remaining.rounded()))%",
             subtitle: subtitle(for: snapshot),
@@ -44,17 +45,27 @@ final class AtollQuotaPresenter {
         )
 
         if hasPresented {
-            try await AtollClient.shared.updateLiveActivity(descriptor)
+            try await rpc.update(descriptor)
         } else {
-            try await AtollClient.shared.presentLiveActivity(descriptor)
+            do {
+                // Atoll persists activities across companion restarts. Update that
+                // record when it exists, then fall back to a first presentation.
+                try await rpc.update(descriptor)
+            } catch {
+                try await rpc.present(descriptor)
+            }
             hasPresented = true
         }
     }
 
     func dismiss() async {
         guard hasPresented else { return }
-        try? await AtollClient.shared.dismissLiveActivity(activityID: Self.activityID)
+        try? await rpc.dismiss(activityID: Self.activityID)
         hasPresented = false
+    }
+
+    func close() async {
+        await rpc.close()
     }
 
     private func color(for remaining: Double) -> AtollColorDescriptor {
