@@ -26,8 +26,8 @@ From this directory:
 swift run codex-quota-atoll
 ```
 
-Atoll asks for extension permission on the first run. By default the companion keeps one app-server connection open and refreshes every five minutes.
-Codex reads time out after 20 seconds and Atoll XPC operations after 15 seconds, so an unavailable service produces a clear error instead of leaving the process stuck.
+Atoll registers and authorizes `com.tibetgao.CodexQuotaAtoll` on the first run. By default the companion keeps one app-server connection open and refreshes every five minutes.
+Codex reads time out after 20 seconds and Atoll RPC operations after 15 seconds, so an unavailable service produces a clear error instead of leaving the process stuck.
 
 Useful options:
 
@@ -46,5 +46,7 @@ swift test
 ```
 
 ## Protocol notes
+
+The companion connects to the WebSocket JSON-RPC service exposed by current Atoll releases at `ws://127.0.0.1:9020`. This avoids relying on the legacy XPC listener, which is unavailable in some signed Atoll builds, while preserving Atoll's own extension authorization and validation.
 
 The app-server field is named `usedPercent`; Atoll intentionally displays `100 - usedPercent` as quota remaining. Window labels are derived from `windowDurationMins` instead of assuming that primary always means five hours. Missing secondary-window, credit, and plan fields are handled gracefully because availability varies by account and workspace.
