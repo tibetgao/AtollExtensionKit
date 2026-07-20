@@ -96,6 +96,19 @@ public actor CodexAppServerClient {
         return try await request(method: "account/rateLimits/read")
     }
 
+    public func listThreads(limit: Int = 6) async throws -> CodexThreadListResult {
+        try await start()
+        return try await request(
+            method: "thread/list",
+            params: [
+                "limit": max(1, min(limit, 20)),
+                "sortKey": "updated_at",
+                "sortDirection": "desc",
+                "archived": false,
+            ]
+        )
+    }
+
     public func stop() {
         readerTask?.cancel()
         readerTask = nil
