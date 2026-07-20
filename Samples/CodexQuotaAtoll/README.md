@@ -11,7 +11,7 @@ A small macOS companion that reads the signed-in Codex account's current rate-li
 - Current task activity and latest task context
 - Green, orange, and red quota states
 
-The dashboard intentionally omits Atoll's minimalistic/closed-island replacement, so Atoll keeps its normal top-island residency and priority behavior.
+The dashboard intentionally omits Atoll's minimalistic/closed-island replacement, so Atoll keeps its normal top-island residency and priority behavior. Its Apple Watch-inspired single-screen layout uses a circular quota complication, icon-driven activity states, and a compact current-task note without scrollable content.
 
 The companion does not read or copy OAuth tokens. Codex owns authentication and token refresh; the companion communicates with the local `codex app-server` process over JSON-RPC.
 
