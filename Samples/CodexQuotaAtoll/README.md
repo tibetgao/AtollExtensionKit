@@ -1,14 +1,17 @@
-# Codex Quota for Atoll
+# Codex Dashboard for Atoll
 
-A small macOS companion that reads the signed-in Codex account's current rate-limit windows from `codex app-server` and publishes the remaining quota as an Atoll live activity.
+A small macOS companion that reads the signed-in Codex account's current rate-limit windows from `codex app-server` and publishes a dedicated Atoll dashboard tab. It also summarizes recent local Codex tasks and detects whether the latest task is running.
 
 ## What it shows
 
-- Remaining percentage in the primary quota window
+- Remaining percentage in each available quota window
 - Remaining percentage in the secondary quota window, when present
 - The next reset time
 - Optional credit balance and plan metadata when the account returns them
-- Green, orange, and red states at above 20%, 6–20%, and 0–5% remaining
+- Current task activity and latest task context
+- Green, orange, and red quota states
+
+The dashboard intentionally omits Atoll's minimalistic/closed-island replacement, so Atoll keeps its normal top-island residency and priority behavior.
 
 The companion does not read or copy OAuth tokens. Codex owns authentication and token refresh; the companion communicates with the local `codex app-server` process over JSON-RPC.
 
