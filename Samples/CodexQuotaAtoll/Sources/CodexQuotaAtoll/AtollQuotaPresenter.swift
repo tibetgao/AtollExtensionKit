@@ -38,7 +38,7 @@ final class AtollQuotaPresenter {
                 enabled: true,
                 duration: 3,
                 style: .standard,
-                showOnUpdate: false
+                showOnUpdate: true
             ),
             sneakPeekTitle: "Codex quota: \(Int(remaining.rounded()))% left",
             sneakPeekSubtitle: subtitle(for: snapshot)
