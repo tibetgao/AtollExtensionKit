@@ -46,20 +46,22 @@ final class AtollQuotaPresenter {
             enableGlassHighlight: true,
             border: AtollWidgetBorderStyle(color: .white, opacity: 0.10, width: 0.5)
         )
-        let sections: [AtollNotchContentSection] = [
-            usageSection(snapshot),
-            activitySection(snapshot),
-            latestTaskSection(snapshot),
-        ]
+        let webContent = AtollWidgetWebContentDescriptor(
+            html: dashboardHTML(snapshot),
+            preferredHeight: 78,
+            isTransparent: true,
+            allowLocalhostRequests: false,
+            allowRemoteRequests: false
+        )
         let tab = AtollNotchExperienceDescriptor.TabConfiguration(
             title: "Codex",
             iconSymbolName: "circle.hexagongrid.fill",
             badgeIcon: codexIcon(),
-            preferredHeight: 390,
+            preferredHeight: 170,
             appearance: appearance,
-            sections: sections,
-            allowWebInteraction: false,
-            footnote: "Updated \(Self.timeFormatter.string(from: snapshot.refreshedAt)) · Local Codex"
+            sections: [],
+            webContent: webContent,
+            allowWebInteraction: false
         )
         return AtollNotchExperienceDescriptor(
             id: Self.experienceID,
@@ -73,77 +75,69 @@ final class AtollQuotaPresenter {
         )
     }
 
-    private func usageSection(_ snapshot: CodexDashboardSnapshot) -> AtollNotchContentSection {
+    private func dashboardHTML(_ snapshot: CodexDashboardSnapshot) -> String {
         let quota = snapshot.quota
-        let short = quota.shortWindow
-        let weekly = quota.weeklyWindow
-        var elements: [AtollWidgetContentElement] = []
-        if let short {
-            elements.append(.text(quota.label(for: short), font: .system(size: 12, weight: .medium), color: .gray))
-            elements.append(.text(percent(short), font: .monospacedDigit(size: 20, weight: .semibold), color: color(for: short.remainingPercent)))
-        }
-        if let weekly {
-            elements.append(.text(quota.label(for: weekly), font: .system(size: 12, weight: .medium), color: .gray))
-            elements.append(.text(percent(weekly), font: .monospacedDigit(size: 20, weight: .semibold), color: color(for: weekly.remainingPercent)))
-        } else if let reset = short?.resetDate {
-            elements.append(.text("Resets", font: .system(size: 12, weight: .medium), color: .gray))
-            elements.append(.text(Self.resetFormatter.string(from: reset), font: .monospacedDigit(size: 15, weight: .medium), color: .white))
-        }
-        if elements.isEmpty {
-            elements = [.text("Quota unavailable", font: .system(size: 13, weight: .medium), color: .gray)]
-        }
-        return .init(
-            id: "usage",
-            title: "Usage",
-            subtitle: quota.planType.map { $0.capitalized },
-            layout: .columns,
-            elements: elements
-        )
+        let window = quota.headlineWindow
+        let remaining = window?.remainingPercent ?? 0
+        let quotaLabel = window.map { quota.label(for: $0).uppercased() } ?? "QUOTA"
+        let state = activityStyle(snapshot.activity)
+        let task = snapshot.latestThread
+        let taskTitle = escapeHTML(task.map { trim($0.displayName, length: 48) } ?? "No recent task")
+        let project = escapeHTML(task.map { trim(URL(fileURLWithPath: $0.cwd).lastPathComponent, length: 28) } ?? "Ready when you are")
+        let reset = window.map { Self.compactResetFormatter.string(from: $0.resetDate) } ?? "Unavailable"
+        let percentage = Int(remaining.rounded())
+        let degrees = Int((remaining * 3.6).rounded())
+        let quotaColor = cssColor(for: remaining)
+
+        return """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>
+        *{box-sizing:border-box}html,body{margin:0;width:100%;height:78px;overflow:hidden;background:transparent;color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+        .face{height:78px;display:grid;grid-template-columns:1fr .9fr 1.45fr;gap:8px;padding:0 1px}
+        .tile{height:72px;border:1px solid rgba(255,255,255,.07);border-radius:18px;background:rgba(255,255,255,.055);display:flex;align-items:center;min-width:0;padding:8px 12px}
+        .ring{width:52px;height:52px;flex:0 0 52px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(\(quotaColor) \(degrees)deg,rgba(255,255,255,.10) 0);position:relative}
+        .ring:after{content:"";position:absolute;inset:5px;border-radius:50%;background:#0c110e}
+        .ring b{z-index:1;font-size:13px;font-variant-numeric:tabular-nums}.copy{min-width:0;margin-left:10px}.eyebrow{font-size:9px;font-weight:700;letter-spacing:.12em;color:rgba(255,255,255,.48)}
+        .main{font-size:13px;font-weight:650;line-height:1.15;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sub{font-size:10px;color:rgba(255,255,255,.48);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .stateIcon{width:38px;height:38px;flex:0 0 38px;border-radius:50%;display:grid;place-items:center;background:\(state.background);color:\(state.foreground)}
+        .stateIcon svg{width:20px;height:20px;fill:currentColor}.note{position:relative;padding-left:14px}.note:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;background:#ff9f0a}
+        </style></head><body><div class="face">
+          <div class="tile"><div class="ring"><b>\(percentage)%</b></div><div class="copy"><div class="eyebrow">\(quotaLabel) QUOTA</div><div class="main">\(percentage)% left</div><div class="sub">Resets \(reset)</div></div></div>
+          <div class="tile"><div class="stateIcon"><svg viewBox="0 0 24 24"><path d="\(state.svgPath)"/></svg></div><div class="copy"><div class="eyebrow">ACTIVITY</div><div class="main">\(state.title)</div><div class="sub">\(state.subtitle)</div></div></div>
+          <div class="tile note"><div class="copy"><div class="eyebrow">CURRENT TASK</div><div class="main">\(taskTitle)</div><div class="sub">\(project)</div></div></div>
+        </div></body></html>
+        """
     }
 
-    private func activitySection(_ snapshot: CodexDashboardSnapshot) -> AtollNotchContentSection {
-        let status: (String, AtollColorDescriptor, String)
-        switch snapshot.activity {
-        case .running: status = ("Running", .green, "Codex is working")
-        case .waiting: status = ("Waiting", .orange, "Action required")
-        case .failed: status = ("Error", .red, "Last task failed")
-        case .idle: status = ("Idle", .gray, "Ready for a task")
+    private func activityStyle(
+        _ activity: CodexTaskActivity
+    ) -> (svgPath: String, background: String, foreground: String, title: String, subtitle: String) {
+        switch activity {
+        case .running:
+            return ("M13 2 5 14h6l-1 8 9-13h-6z", "rgba(48,209,88,.16)", "#30d158", "Running", "Codex is working")
+        case .waiting:
+            return ("M6 2h12v4c0 3-2 5-4 6 2 1 4 3 4 6v4H6v-4c0-3 2-5 4-6-2-1-4-3-4-6zm3 3c0 2 1 4 3 5 2-1 3-3 3-5z", "rgba(255,159,10,.16)", "#ff9f0a", "Waiting", "Action required")
+        case .failed:
+            return ("M12 2 1 21h22zm-1 6h2v7h-2zm0 9h2v2h-2z", "rgba(255,69,58,.16)", "#ff453a", "Error", "Check latest task")
+        case .idle:
+            return ("M7 5h4v14H7zm6 0h4v14h-4z", "rgba(174,174,178,.14)", "#aeaeb2", "Idle", "Ready for a task")
         }
-        let elements: [AtollWidgetContentElement] = [
-            .text("Status", font: .system(size: 12, weight: .regular), color: .gray),
-            .text(status.0, font: .system(size: 15, weight: .semibold), color: status.1),
-            .text("Recent", font: .system(size: 12, weight: .regular), color: .gray),
-            .text("\(snapshot.threads.count) tasks", font: .monospacedDigit(size: 15, weight: .medium), color: .white),
-        ]
-        return .init(
-            id: "activity",
-            title: "Activity",
-            subtitle: status.2,
-            layout: .metrics,
-            elements: elements
-        )
     }
 
-    private func latestTaskSection(_ snapshot: CodexDashboardSnapshot) -> AtollNotchContentSection {
-        guard let thread = snapshot.latestThread else {
-            return .init(
-                id: "latest",
-                title: "Latest task",
-                layout: .stack,
-                elements: [.text("No recent Codex tasks", font: .system(size: 13), color: .gray)]
-            )
+    private func cssColor(for remaining: Double) -> String {
+        switch remaining {
+        case ...10: return "#ff453a"
+        case ...25: return "#ff9f0a"
+        default: return "#30d158"
         }
-        let project = URL(fileURLWithPath: thread.cwd).lastPathComponent
-        return .init(
-            id: "latest",
-            title: "Latest task",
-            subtitle: project,
-            layout: .stack,
-            elements: [
-                .text(trim(thread.displayName, length: 80), font: .system(size: 14, weight: .semibold), color: .white),
-                .text("Updated \(relativeTime(thread.updatedAt))", font: .system(size: 11, weight: .regular), color: .gray),
-            ]
-        )
+    }
+
+    private func escapeHTML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     private func codexIcon() -> AtollIconDescriptor {
@@ -157,11 +151,6 @@ final class AtollQuotaPresenter {
             }
         }
         return .symbol(name: "circle.hexagongrid.fill", size: 24, weight: .semibold)
-    }
-
-    private func percent(_ window: CodexRateLimitWindow?) -> String {
-        guard let window else { return "—" }
-        return "\(Int(window.remainingPercent.rounded()))% left"
     }
 
     private func color(for remaining: Double) -> AtollColorDescriptor {
@@ -180,30 +169,13 @@ final class AtollQuotaPresenter {
         ]
     }
 
-    private func relativeTime(_ epoch: Int64) -> String {
-        let date = Date(timeIntervalSince1970: TimeInterval(epoch))
-        return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
-    }
-
     private func trim(_ string: String, length: Int) -> String {
         string.count <= length ? string : String(string.prefix(length - 1)) + "…"
     }
 
-    private static let resetFormatter: DateFormatter = {
+    private static let compactResetFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "E HH:mm"
-        return formatter
-    }()
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
-
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
         return formatter
     }()
 }
