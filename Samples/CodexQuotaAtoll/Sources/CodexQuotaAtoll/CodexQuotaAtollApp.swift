@@ -19,17 +19,23 @@ struct CodexQuotaAtollApp {
             }) else {
                 throw AppError.authorizationDenied
             }
+            await presenter.removeLegacyActivity()
 
             repeat {
                 do {
-                    let result = try await withTimeout(seconds: 20) {
-                        try await client.readRateLimits()
+                    let dashboard = try await withTimeout(seconds: 20) {
+                        let limits = try await client.readRateLimits()
+                        let threads = try await client.listThreads(limit: 6).data
+                        return CodexDashboardSnapshot(
+                            quota: CodexQuotaSnapshot(result: limits),
+                            threads: threads,
+                            activity: LocalCodexActivityMonitor.activity(for: threads.first)
+                        )
                     }
-                    let snapshot = CodexQuotaSnapshot(result: result)
                     try await withTimeout(seconds: 15) {
-                        try await presenter.show(snapshot)
+                        try await presenter.show(dashboard)
                     }
-                    printStatus(snapshot)
+                    printStatus(dashboard)
                 } catch {
                     FileHandle.standardError.write(Data("Refresh failed: \(error.localizedDescription)\n".utf8))
                     if options.once { throw error }
@@ -41,7 +47,6 @@ struct CodexQuotaAtollApp {
             } while !options.once
         } catch {
             FileHandle.standardError.write(Data("codex-quota-atoll: \(error.localizedDescription)\n".utf8))
-            await presenter.dismiss()
             await presenter.close()
             await client.stop()
             exit(EXIT_FAILURE)
@@ -71,7 +76,8 @@ struct CodexQuotaAtollApp {
         }
     }
 
-    private static func printStatus(_ snapshot: CodexQuotaSnapshot) {
+    private static func printStatus(_ dashboard: CodexDashboardSnapshot) {
+        let snapshot = dashboard.quota
         let short = snapshot.shortWindow.map {
             "\(snapshot.label(for: $0)) \(Int($0.remainingPercent.rounded()))%"
         } ?? "primary n/a"
@@ -79,7 +85,7 @@ struct CodexQuotaAtollApp {
             "\(snapshot.label(for: $0)) \(Int($0.remainingPercent.rounded()))%"
         } ?? "secondary n/a"
         let credits = snapshot.credits?.balance.map { " credits \($0)" } ?? ""
-        print("Codex quota: \(short), \(weekly)\(credits)")
+        print("Codex dashboard: \(short), \(weekly)\(credits), \(dashboard.activity.rawValue)")
     }
 }
 
