@@ -41,6 +41,24 @@ actor AtollRPCClient {
         )
     }
 
+    func present(_ descriptor: AtollNotchExperienceDescriptor) async throws {
+        try await sendDescriptor(descriptor, method: "atoll.presentNotchExperience")
+    }
+
+    func update(_ descriptor: AtollNotchExperienceDescriptor) async throws {
+        try await sendDescriptor(descriptor, method: "atoll.updateNotchExperience")
+    }
+
+    func dismiss(experienceID: String) async throws {
+        _ = try await call(
+            method: "atoll.dismissNotchExperience",
+            params: [
+                "experienceID": experienceID,
+                "bundleIdentifier": Self.bundleIdentifier,
+            ]
+        )
+    }
+
     func close() {
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
@@ -49,6 +67,17 @@ actor AtollRPCClient {
 
     private func sendDescriptor(
         _ descriptor: AtollLiveActivityDescriptor,
+        method: String
+    ) async throws {
+        let encoded = try JSONEncoder().encode(descriptor)
+        guard let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
+            throw AtollRPCError.invalidDescriptor
+        }
+        _ = try await call(method: method, params: ["descriptor": object])
+    }
+
+    private func sendDescriptor(
+        _ descriptor: AtollNotchExperienceDescriptor,
         method: String
     ) async throws {
         let encoded = try JSONEncoder().encode(descriptor)
