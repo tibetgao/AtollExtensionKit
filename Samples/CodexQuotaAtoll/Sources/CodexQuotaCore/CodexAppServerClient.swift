@@ -48,8 +48,14 @@ public actor CodexAppServerClient {
         let process = Process()
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
-        process.executableURL = executableURL
-        process.arguments = ["codex", "app-server"]
+        if executableURL.path == "/usr/bin/env",
+           let codexExecutable = Self.findCodexExecutable(in: environment) {
+            process.executableURL = codexExecutable
+            process.arguments = ["app-server"]
+        } else {
+            process.executableURL = executableURL
+            process.arguments = ["codex", "app-server"]
+        }
         process.environment = environment
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
@@ -96,17 +102,56 @@ public actor CodexAppServerClient {
         return try await request(method: "account/rateLimits/read")
     }
 
-    public func listThreads(limit: Int = 6) async throws -> CodexThreadListResult {
+    public func listThreads(
+        limit: Int = 6,
+        cursor: String? = nil
+    ) async throws -> CodexThreadListResult {
         try await start()
+        var params: [String: Any] = [
+            "limit": max(1, min(limit, 20)),
+            "sortKey": "updated_at",
+            "sortDirection": "desc",
+            "archived": false,
+        ]
+        if let cursor, !cursor.isEmpty {
+            params["cursor"] = cursor
+        }
         return try await request(
             method: "thread/list",
-            params: [
-                "limit": max(1, min(limit, 20)),
-                "sortKey": "updated_at",
-                "sortDirection": "desc",
-                "archived": false,
-            ]
+            params: params
         )
+    }
+
+    /// Fetches a bounded history using the app-server's cursor pagination.
+    /// The dashboard keeps this result in its disk cache, so opening Atoll never
+    /// has to wait for older pages to arrive.
+    public func listThreadHistory(
+        maximumCount: Int = 100,
+        pageSize: Int = 20
+    ) async throws -> [CodexThreadSummary] {
+        let maximumCount = max(1, min(maximumCount, 200))
+        let pageSize = max(1, min(pageSize, 20))
+        var cursor: String?
+        var previousCursor: String?
+        var threads: [CodexThreadSummary] = []
+        var seen = Set<String>()
+
+        while threads.count < maximumCount {
+            let page = try await listThreads(limit: pageSize, cursor: cursor)
+            for thread in page.data where seen.insert(thread.id).inserted {
+                threads.append(thread)
+                if threads.count == maximumCount { break }
+            }
+
+            previousCursor = cursor
+            cursor = page.nextCursor
+            guard !page.data.isEmpty,
+                  let cursor,
+                  !cursor.isEmpty,
+                  cursor != previousCursor else { break }
+        }
+
+        return threads.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     public func stop() {
@@ -191,5 +236,31 @@ public actor CodexAppServerClient {
         var data = try JSONSerialization.data(withJSONObject: object)
         data.append(0x0A)
         return data
+    }
+
+    private static func findCodexExecutable(in environment: [String: String]) -> URL? {
+        let fileManager = FileManager.default
+        var candidates: [String] = []
+
+        if let override = environment["CODEX_EXECUTABLE"], !override.isEmpty {
+            candidates.append(override)
+        }
+        if let path = environment["PATH"] {
+            candidates.append(contentsOf: path.split(separator: ":").map {
+                URL(fileURLWithPath: String($0)).appendingPathComponent("codex").path
+            })
+        }
+        candidates.append(contentsOf: [
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Applications/Codex.app/Contents/Resources/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/codex").path,
+        ])
+
+        return candidates.lazy
+            .filter { fileManager.isExecutableFile(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
+            .first
     }
 }

@@ -114,6 +114,16 @@ public struct AtollNotchExperienceDescriptor: Codable, Sendable, Hashable, Ident
 
 public extension AtollNotchExperienceDescriptor {
     struct TabConfiguration: Codable, Sendable, Hashable {
+        /// Controls whether Atoll supplies branded chrome around the extension content.
+        public enum ContentLayout: String, Codable, Sendable, Hashable {
+            /// Atoll renders the extension badge/title and applies its standard content insets.
+            case standard
+
+            /// The extension owns the complete content surface. Atoll omits the native
+            /// badge/title header, inter-block header spacing, and outer content insets.
+            case contentOnly
+        }
+
         /// Visible title inside the tab button tooltip and diagnostics
         public let title: String
 
@@ -138,6 +148,9 @@ public extension AtollNotchExperienceDescriptor {
         /// Whether the embedded web view should allow keyboard/mouse input
         public let allowWebInteraction: Bool
 
+        /// Optional host chrome behavior. Missing values preserve the legacy standard layout.
+        public let contentLayout: ContentLayout?
+
         /// Optional footnote text displayed below the content stack
         public let footnote: String?
 
@@ -150,6 +163,7 @@ public extension AtollNotchExperienceDescriptor {
             sections: [AtollNotchContentSection] = [],
             webContent: AtollWidgetWebContentDescriptor? = nil,
             allowWebInteraction: Bool = false,
+            contentLayout: ContentLayout? = nil,
             footnote: String? = nil
         ) {
             self.title = title
@@ -160,6 +174,7 @@ public extension AtollNotchExperienceDescriptor {
             self.sections = sections
             self.webContent = webContent
             self.allowWebInteraction = allowWebInteraction
+            self.contentLayout = contentLayout
             self.footnote = footnote
         }
 
