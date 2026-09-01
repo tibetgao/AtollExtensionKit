@@ -284,6 +284,28 @@ public struct CodexDashboardSnapshot: Codable, Equatable, Sendable {
         details?[thread.id]
     }
 
+    public func isActiveSession(_ thread: CodexThreadSummary, at now: Date = Date()) -> Bool {
+        switch activity(for: thread, at: now) {
+        case .preparing, .running, .waitingForApproval, .waitingForInput, .reconnecting:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public func isRecentCompletion(
+        _ thread: CodexThreadSummary,
+        within interval: TimeInterval = 120,
+        at now: Date = Date()
+    ) -> Bool {
+        guard activity(for: thread, at: now) == .completed,
+              let completedAt = details(for: thread)?.turnCompletedAt else {
+            return false
+        }
+        let age = now.timeIntervalSince(completedAt)
+        return age >= 0 && age < interval
+    }
+
     public func updatingActivities(_ values: [String: CodexTaskActivity]) -> Self {
         .init(quota: quota, threads: threads, activities: values, details: details, refreshedAt: refreshedAt)
     }

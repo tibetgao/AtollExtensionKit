@@ -13,10 +13,15 @@ final class CodexInteractionServer: @unchecked Sendable {
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.tibetgao.CodexQuotaAtoll.navigation")
     private let preferences: CodexDashboardPreferences
+    private let bridgeCredentials: CodexDashboardBridgeCredentials
     private var snapshot: CodexDashboardSnapshot?
 
-    init(preferences: CodexDashboardPreferences) {
+    init(
+        preferences: CodexDashboardPreferences,
+        bridgeCredentials: CodexDashboardBridgeCredentials
+    ) {
         self.preferences = preferences
+        self.bridgeCredentials = bridgeCredentials
     }
 
     func start() throws {
@@ -70,6 +75,7 @@ final class CodexInteractionServer: @unchecked Sendable {
 
     private func handle(target: String) -> HTTPResponse? {
         guard let components = URLComponents(string: "http://127.0.0.1\(target)") else { return nil }
+        guard bridgeCredentials.authorizes(components) else { return nil }
         let destination: URL?
         switch components.path {
         case "/dashboard":
@@ -121,22 +127,16 @@ final class CodexInteractionServer: @unchecked Sendable {
         let query = components.queryItems ?? []
         let offset = max(0, Int(query.first(where: { $0.name == "offset" })?.value ?? "0") ?? 0)
         let limit = max(1, min(20, Int(query.first(where: { $0.name == "limit" })?.value ?? "5") ?? 5))
-        let threads = snapshot?.threads ?? []
+        guard let snapshot else {
+            return jsonResponse(["items": [], "total": 0])
+        }
+        let threads = snapshot.threads.filter {
+            !snapshot.isActiveSession($0) && !snapshot.isRecentCompletion($0)
+        }
         let start = min(offset, threads.count)
         let end = min(start + limit, threads.count)
-        let items: [[String: Any]] = threads[start..<end].map { thread in
-            var item: [String: Any] = [
-                "id": thread.id,
-                "title": thread.displayName,
-                "state": snapshot?.activity(for: thread).rawValue ?? CodexTaskActivity.idle.rawValue,
-                "updatedAt": thread.updatedAt,
-            ]
-            if let details = snapshot?.details(for: thread) {
-                if let model = details.model { item["model"] = model }
-                if let effort = details.reasoningEffort { item["effort"] = effort }
-                if let speed = details.outputTokensPerSecond { item["speed"] = speed }
-            }
-            return item
+        let items = threads[start..<end].map {
+            threadObject($0, snapshot: snapshot, includeDetails: true)
         }
         let object: [String: Any] = ["items": items, "total": threads.count]
         guard let body = try? JSONSerialization.data(withJSONObject: object) else {
@@ -149,14 +149,7 @@ final class CodexInteractionServer: @unchecked Sendable {
         guard let snapshot else {
             return jsonResponse(["active": [], "threadCount": 0])
         }
-        let activeThreads = snapshot.threads.filter {
-            switch snapshot.activity(for: $0) {
-            case .preparing, .running, .waitingForApproval, .waitingForInput, .reconnecting:
-                return true
-            default:
-                return false
-            }
-        }
+        let activeThreads = snapshot.threads.filter { snapshot.isActiveSession($0) }
         let quotaObject: (CodexRateLimitWindow?) -> [String: Any]? = { window in
             guard let window else { return nil }
             return [
@@ -169,15 +162,15 @@ final class CodexInteractionServer: @unchecked Sendable {
         if let primary = quotaObject(snapshot.quota.shortWindow) { quota["primary"] = primary }
         if let secondary = quotaObject(snapshot.quota.weeklyWindow) { quota["secondary"] = secondary }
         let active = activeThreads.map { threadObject($0, snapshot: snapshot, includeDetails: true) }
-        let completion = snapshot.threads.first(where: { thread in
-            guard snapshot.activity(for: thread) == .completed,
-                  let date = snapshot.details(for: thread)?.turnCompletedAt else { return false }
-            return Date().timeIntervalSince(date) < 120
-        }).map { threadObject($0, snapshot: snapshot, includeDetails: true) }
+        let completion = snapshot.threads.first(where: { snapshot.isRecentCompletion($0) })
+            .map { threadObject($0, snapshot: snapshot, includeDetails: true) }
+        let historyCount = snapshot.threads.filter {
+            !snapshot.isActiveSession($0) && !snapshot.isRecentCompletion($0)
+        }.count
         var object: [String: Any] = [
             "quota": quota,
             "active": active,
-            "threadCount": snapshot.threads.count,
+            "threadCount": historyCount,
             "refreshedAt": Int64(snapshot.refreshedAt.timeIntervalSince1970),
         ]
         if let completion { object["completion"] = completion }

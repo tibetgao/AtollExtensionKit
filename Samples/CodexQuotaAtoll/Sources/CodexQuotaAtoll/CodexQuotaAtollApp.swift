@@ -9,9 +9,16 @@ struct CodexQuotaAtollApp {
         let options = Options(arguments: CommandLine.arguments)
         let client = CodexAppServerClient()
         let preferences = CodexDashboardPreferences()
-        let presenter = AtollQuotaPresenter(preferences: preferences)
+        let bridgeCredentials = CodexDashboardBridgeCredentials()
+        let presenter = AtollQuotaPresenter(
+            preferences: preferences,
+            bridgeCredentials: bridgeCredentials
+        )
         let cache = CodexDashboardCache()
-        let interactionServer = CodexInteractionServer(preferences: preferences)
+        let interactionServer = CodexInteractionServer(
+            preferences: preferences,
+            bridgeCredentials: bridgeCredentials
+        )
         var currentSnapshot: CodexDashboardSnapshot?
 
         do {

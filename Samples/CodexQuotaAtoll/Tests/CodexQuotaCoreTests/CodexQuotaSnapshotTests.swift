@@ -2,6 +2,23 @@ import XCTest
 @testable import CodexQuotaCore
 
 final class CodexQuotaSnapshotTests: XCTestCase {
+    func testDashboardBridgeRequiresExactNonEmptyToken() throws {
+        let credentials = CodexDashboardBridgeCredentials(token: "expected-token")
+
+        XCTAssertTrue(credentials.authorizes(try XCTUnwrap(
+            URLComponents(string: "http://127.0.0.1:9031/dashboard?token=expected-token")
+        )))
+        XCTAssertFalse(credentials.authorizes(try XCTUnwrap(
+            URLComponents(string: "http://127.0.0.1:9031/dashboard")
+        )))
+        XCTAssertFalse(credentials.authorizes(try XCTUnwrap(
+            URLComponents(string: "http://127.0.0.1:9031/dashboard?token=wrong-token")
+        )))
+        XCTAssertFalse(CodexDashboardBridgeCredentials(token: "").authorizes(try XCTUnwrap(
+            URLComponents(string: "http://127.0.0.1:9031/dashboard?token=")
+        )))
+    }
+
     func testDecodesRateLimitsAndComputesRemainingQuota() throws {
         let data = Data(#"""
         {
@@ -92,6 +109,42 @@ final class CodexQuotaSnapshotTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.activity(for: thread, at: now), .running)
+    }
+
+    func testActiveSessionIsNotHistoryEligible() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let active = CodexThreadSummary(
+            id: "active", name: "Active", preview: "", cwd: "/tmp",
+            status: .active(waitingOnApproval: false, waitingOnUserInput: false),
+            modelProvider: "openai", createdAt: 1, updatedAt: 2_000_000
+        )
+        let completed = CodexThreadSummary(
+            id: "completed", name: "Completed", preview: "", cwd: "/tmp",
+            status: .idle, modelProvider: "openai", createdAt: 1, updatedAt: 2_000_000
+        )
+        let snapshot = CodexDashboardSnapshot(
+            quota: try emptyQuota(), threads: [active, completed],
+            activities: ["active": .running, "completed": .completed]
+        )
+
+        XCTAssertTrue(snapshot.isActiveSession(active, at: now))
+        XCTAssertFalse(snapshot.isActiveSession(completed, at: now))
+    }
+
+    func testRecentCompletionIsNotHistoryEligible() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let thread = CodexThreadSummary(
+            id: "completed", name: "Completed", preview: "", cwd: "/tmp",
+            status: .idle, modelProvider: "openai", createdAt: 1, updatedAt: 2_000_000
+        )
+        let details = CodexSessionDetails(turnCompletedAt: now.addingTimeInterval(-30))
+        let snapshot = CodexDashboardSnapshot(
+            quota: try emptyQuota(), threads: [thread], activities: [thread.id: .completed],
+            details: [thread.id: details]
+        )
+
+        XCTAssertTrue(snapshot.isRecentCompletion(thread, at: now))
+        XCTAssertFalse(snapshot.isRecentCompletion(thread, at: now.addingTimeInterval(121)))
     }
 
     func testReadsNestedPlanQuestionAndRecentTokenSpeedFromRollout() throws {
